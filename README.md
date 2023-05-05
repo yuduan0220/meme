@@ -23,5 +23,3 @@
 
 ## How to install docker:
 Please see https://docs.docker.com/docker-for-mac/install/ for how to install Docker Desktop on Mac.
-
-TEST
