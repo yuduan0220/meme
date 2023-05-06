@@ -13,8 +13,8 @@ contract DeflationLabsToken is ERC20, Ownable {
     // TODO: Whitelist uniswap v2 pair
     mapping(address => uint256) private _lastTransferTimestamp;
     uint256 public devPercent = 2;
-    uint256 public burnPercent = 8;
-    uint256 public rewardPercent = 0;
+    uint256 public burnPercent = 5;
+    uint256 public rewardPercent = 3;
     address public devAddress = address(0);
     address public rewardAddress = address(0);
     uint256 public lockTimerInSeconds = 36 * 60 * 60; // after 36 hours the account will be blocked if there is no transfer
