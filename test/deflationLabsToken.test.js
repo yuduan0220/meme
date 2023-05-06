@@ -100,22 +100,32 @@ describe('DeflationLabsTokenTest', () => {
         expect(totalSupplyAfter + burnAmount).to.equal(totalSupplyBefore);
     });
 
-    it('Transfer timelock works correctly', async() => {
+    it('Timelock works correctly in transfer', async() => {
         const amount = 100;
         const balanceBefore = (await this.dlt.balanceOf(owner)).toNumber();
         await this.dlt.transfer(user, amount, {from: owner});   // _lastTransferTimestamp for owner is updated
         await time.increase(time.duration.hours(35));           // increase block timestamp by 35 hours, not locked yet
-        await this.dlt.transfer(user, amount, {from: owner});   // this should still work and reset the lock
-        await time.increase(time.duration.hours(35));           // increase block timestamp by 35 hours, not locked yet
-        await this.dlt.transfer(user, amount, {from: owner});   // this should still work and reset the lock
+        await this.dlt.transfer(user, amount, {from: owner});   // this should still work
         const balanceAfter = (await this.dlt.balanceOf(owner)).toNumber();
-        expect(balanceAfter + 3 * amount).to.equal(balanceBefore);
-        await time.increase(time.duration.hours(36) + 1);        // increase block timestamp by 36 hours, should be locked
+        expect(balanceAfter + 2 * amount).to.equal(balanceBefore);
+        await time.increase(time.duration.hours(1) + 1);        // increase block timestamp by one more hour, should be locked
         await expectRevert(
             this.dlt.transfer(user, amount, {from: owner}),     // this should be blocked
-            'Timeout, blocked'
+            'Timeout, sender or receiver is blocked'
         );
         expect(await this.dlt.isBlocked(owner)).to.be.true;
+        expect(await this.dlt.isBlocked(user)).to.be.false;
+    });
+
+    it('Timelock resets correctly in transfer', async() => {
+        const amount = 100;
+        const balanceBefore = (await this.dlt.balanceOf(owner)).toNumber();
+        await this.dlt.transfer(user, amount, {from: owner});   // _lastTransferTimestamp for owner is updated
+        await time.increase(time.duration.hours(35));           // increase block timestamp by 35 hours, not locked yet
+        const balance = (await this.dlt.balanceOf(owner)).toNumber();
+        await this.dlt.transfer(user, balance, {from: owner});  // this should reset the lock because owner's balance is empty
+        await time.increase(time.duration.hours(1) + 1);        // increase block timestamp by one more hour
+        expect(await this.dlt.isBlocked(owner)).to.be.false;    // owner is not blocked after 36 hours
         expect(await this.dlt.isBlocked(user)).to.be.false;
     });
 });
