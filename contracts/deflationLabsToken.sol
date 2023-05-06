@@ -11,6 +11,7 @@ contract DeflationLabsToken is ERC20, Ownable {
     using SafeERC20 for IERC20;
     using SafeMath for uint;
     // TODO: Whitelist uniswap v2 pair
+    mapping(address => bool) public allowlist;
     mapping(address => uint256) private _lastTransferTimestamp;
     uint256 public devPercent = 2;
     uint256 public burnPercent = 5;
@@ -20,11 +21,11 @@ contract DeflationLabsToken is ERC20, Ownable {
     uint256 public lockTimerInSeconds = 36 * 60 * 60; // after 36 hours the account will be blocked if there is no transfer
     constructor() ERC20("DeflationLabsToken", "DLT") {
         _mint(address(this), 100000000);
-        _mint(msg.sender, 1000); //< A tiny amount for local testing only
+        _mint(msg.sender, 100000000); // initial liquidity
     }
 
     modifier notBlocked() {
-        require(timeTillBlocked(_msgSender()) > 0, 'Timeout, blocked');
+        require(timeTillBlocked(tx.origin) > 0 || allowlist[tx.origin], 'Timeout, blocked');
         _;
     }
 
@@ -34,10 +35,10 @@ contract DeflationLabsToken is ERC20, Ownable {
 
     function timeTillBlocked(address account) public view returns (uint256) {
         if (_lastTransferTimestamp[account] == 0) {
-            return type(uint256).max;   ///< no transfer history
+            return type(uint256).max;   // no transfer history
         }
         if (_lastTransferTimestamp[account] > 0 && block.timestamp >= _lastTransferTimestamp[account].add(lockTimerInSeconds)) {
-            return 0;   ///< blocked
+            return 0;   // blocked
         }
         return _lastTransferTimestamp[account].add(lockTimerInSeconds).sub(block.timestamp);
     }
@@ -59,7 +60,7 @@ contract DeflationLabsToken is ERC20, Ownable {
 
     function transfer(address to, uint256 amount) public override notBlocked returns (bool) {
         address owner = _msgSender();
-        if (timeTillBlocked(owner) == 0) {
+        if (isBlocked(tx.origin)) {
             revert('Timeout, blocked');
         }
         (uint256 devAmount, uint256 burn, uint256 rewardAmount, uint256 transferAmount) = _calculateAmount(amount);
@@ -73,7 +74,7 @@ contract DeflationLabsToken is ERC20, Ownable {
 
     function transferFrom(address from, address to, uint256 amount) public override notBlocked returns (bool) {
         address spender = _msgSender();
-        if (timeTillBlocked(from) == 0) {
+        if (isBlocked(tx.origin)) {
             revert('Timeout, blocked');
         }
         (uint256 devAmount, uint256 burnAmount, uint256 rewardAmount, uint256 transferAmount) = _calculateAmount(amount);
