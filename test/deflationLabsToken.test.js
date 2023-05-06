@@ -20,8 +20,8 @@ describe('DeflationLabsTokenTest', () => {
         expect((await this.dlt.balanceOf(this.dlt.address)).toNumber()).to.equal(100000000);
         // expect((await this.dlt.totalSupply()).toNumber()).to.equal(100000000);
         expect((await this.dlt.devPercent()).toNumber()).to.equal(2);
-        expect((await this.dlt.burnPercent()).toNumber()).to.equal(8);
-        expect((await this.dlt.rewardPercent()).toNumber()).to.equal(0);
+        expect((await this.dlt.burnPercent()).toNumber()).to.equal(5);
+        expect((await this.dlt.rewardPercent()).toNumber()).to.equal(3);
         expect(await this.dlt.isBlocked(owner)).to.be.false;
         expect(await this.dlt.isBlocked(user)).to.be.false;
         expect(await this.dlt.devAddress()).to.equal(dev);
@@ -58,6 +58,7 @@ describe('DeflationLabsTokenTest', () => {
 
     it('Transfer works correctly', async() => {
         const amount = 100;
+        const totalSupplyBefore = (await this.dlt.totalSupply()).toNumber();
         const balanceBefore = (await this.dlt.balanceOf(owner)).toNumber();
         await this.dlt.transfer(user, amount, {from: owner});
         const balanceAfter = (await this.dlt.balanceOf(owner)).toNumber();
@@ -71,13 +72,17 @@ describe('DeflationLabsTokenTest', () => {
         const burnPercent = (await this.dlt.burnPercent()).toNumber();
         const burnAmount = amount * burnPercent / 100;
         const userBalance = (await this.dlt.balanceOf(user)).toNumber();
+        expect(burnAmount > 0).to.be.true;
+        const totalSupplyAfter = (await this.dlt.totalSupply()).toNumber();
         // console.log(userBalance, devBalance, rewardBalance);
         expect(userBalance + burnAmount + rewardBalance + devBalance).to.equal(amount);
+        expect(totalSupplyAfter + burnAmount).to.equal(totalSupplyBefore);
     });
 
     it('Transfer works correctly with updated percent', async() => {
         await this.dlt.updatePercentage(2, 3, 5, {from: owner});
         const amount = 100;
+        const totalSupplyBefore = (await this.dlt.totalSupply()).toNumber();
         const balanceBefore = (await this.dlt.balanceOf(owner)).toNumber();
         await this.dlt.transfer(user, amount, {from: owner});
         const balanceAfter = (await this.dlt.balanceOf(owner)).toNumber();
@@ -91,8 +96,11 @@ describe('DeflationLabsTokenTest', () => {
         const burnPercent = (await this.dlt.burnPercent()).toNumber();
         const burnAmount = amount * burnPercent / 100;
         const userBalance = (await this.dlt.balanceOf(user)).toNumber();
+        expect(burnAmount > 0).to.be.true;
+        const totalSupplyAfter = (await this.dlt.totalSupply()).toNumber();
         // console.log(userBalance, devBalance, rewardBalance);
         expect(userBalance + burnAmount + rewardBalance + devBalance).to.equal(amount);
+        expect(totalSupplyAfter + burnAmount).to.equal(totalSupplyBefore);
     });
 
     it('Transfer timelock works correctly', async() => {
