@@ -8,7 +8,6 @@ const DeflationLabsToken = contract.fromArtifact('DeflationLabsToken');
 
 describe('DeflationLabsTokenTest', () => {
     const [owner, dev, reward, user] = accounts;
-    // this.timeout(10000);
 
     beforeEach(async() => {
         this.dlt = await DeflationLabsToken.new({from: owner});
@@ -18,7 +17,6 @@ describe('DeflationLabsTokenTest', () => {
 
     it('The contract initially has correct state', async() => {
         expect((await this.dlt.balanceOf(this.dlt.address)).toNumber()).to.equal(100000000);
-        // expect((await this.dlt.totalSupply()).toNumber()).to.equal(100000000);
         expect((await this.dlt.devPercent()).toNumber()).to.equal(2);
         expect((await this.dlt.burnPercent()).toNumber()).to.equal(5);
         expect((await this.dlt.rewardPercent()).toNumber()).to.equal(3);
@@ -26,7 +24,6 @@ describe('DeflationLabsTokenTest', () => {
         expect(await this.dlt.isBlocked(user)).to.be.false;
         expect(await this.dlt.devAddress()).to.equal(dev);
         expect(await this.dlt.rewardAddress()).to.equal(reward);
-        console.log((await time.latest()).toNumber());
     });
 
     it('Only owner can modify contract state', async() => {
@@ -80,7 +77,7 @@ describe('DeflationLabsTokenTest', () => {
     });
 
     it('Transfer works correctly with updated percent', async() => {
-        await this.dlt.updatePercentage(2, 3, 5, {from: owner});
+        await this.dlt.updatePercentage(3, 4, 3, {from: owner});
         const amount = 100;
         const totalSupplyBefore = (await this.dlt.totalSupply()).toNumber();
         const balanceBefore = (await this.dlt.balanceOf(owner)).toNumber();
