@@ -31,7 +31,7 @@ contract DeflationLabsToken is ERC20, Ownable {
     address public constant uniswapV2Factory = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
     address public constant uniswapV2Router = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
     address public uniswapV2Pair = address(0);
-    constructor() ERC20("DeflationLabsToken", "DLT") {
+    constructor() ERC20("GameOfDelation", "GOD") {
         _mint(address(this), 100000000); // community airdrop
         _mint(msg.sender, 100000000); // initial liquidity
         (address token0, address token1) = WETH < address(this) ? (WETH, address(this)) : (address(this), WETH);
