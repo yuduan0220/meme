@@ -11,8 +11,8 @@ import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 contract DeflationLabsToken is ERC20, Ownable {
     using SafeERC20 for IERC20;
     using SafeMath for uint;
-    mapping(address => bool) public allowlist;  // TODO: Whitelist uniswap v2 pair
-    mapping(address => uint256) private _lastTransferTimestamp;
+    mapping(address => bool) public allowlist;
+    mapping(address => uint256) private _transferDeadline;
     mapping(address => bool) public claimed;
     uint256 public devPercent = 2;
     uint256 public burnPercent = 5;
@@ -20,10 +20,10 @@ contract DeflationLabsToken is ERC20, Ownable {
     uint256 public burnedAmount = 0;
     address public devAddress = address(0);
     address public rewardAddress = address(0);
-    uint256 public lockTimerInSeconds = 36 * 60 * 60; // after 36 hours the account will be blocked if there is no transfer
+    uint256 public constant lockTimerInSeconds = 36 * 60 * 60;  // after 36 hours the account will be locked if there is no transfer
     bool public airdropActive = false;
     uint256 public airdropDeadline = 0;
-    uint256 public constant airdropDuration = 72 * 60 * 60; // airdrop will last for 72 hours
+    uint256 public constant airdropDuration = 72 * 60 * 60;     // airdrop will last for 72 hours
     uint256 public baseAirdropAmount = 1000;
     bytes32 public merkleRoot;
 
@@ -32,48 +32,48 @@ contract DeflationLabsToken is ERC20, Ownable {
     address public constant uniswapV2Router = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
     address public uniswapV2Pair = address(0);
     constructor() ERC20("GameOfDelation", "GOD") {
-        _mint(address(this), 100000000); // community airdrop
-        _mint(msg.sender, 100000000); // initial liquidity
+        _mint(address(this), 100000000);    // community airdrop
+        _mint(msg.sender, 100000000);       // initial liquidity
         (address token0, address token1) = WETH < address(this) ? (WETH, address(this)) : (address(this), WETH);
         uniswapV2Pair = address(uint160(uint(keccak256(abi.encodePacked(
                 hex'ff',
                 uniswapV2Factory,
                 keccak256(abi.encodePacked(token0, token1)),
-                hex'96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f' // init code hash
+                hex'96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f'
             )))));
         allowlist[uniswapV2Pair] = true;
         allowlist[uniswapV2Router] = true;
         allowlist[address(this)] = true;
     }
 
-    function isBlocked(address account) public view returns (bool) {
-        return timeTillBlocked(account) == 0 && !allowlist[account];
+    function isLocked(address account) public view returns (bool) {
+        return timeTillLocked(account) == 0 && !allowlist[account];
     }
 
     function airdropEligible(address account, bytes32[] calldata proof) public view returns (bool, uint256) {
         if (!airdropActive || block.timestamp > airdropDeadline) {
-            return (false, 0);  // airdrop finished
+            return (false, 0);      // airdrop finished
         }
         bytes32 leaf = keccak256(abi.encodePacked(account));
         if (MerkleProof.verify(proof, merkleRoot, leaf)) {
             if (!claimed[account]) {
                 return (true, _getDecayedAirdropAmount());
             } else {
-                return (false, 0); // claimed
+                return (false, 0);  // claimed
             }
         } else {
-            return (false, 0);  // not eligible
+            return (false, 0);      // not eligible
         }
     }
 
-    function timeTillBlocked(address account) public view returns (uint256) {
-        if (_lastTransferTimestamp[account] == 0) {
-            return type(uint256).max;   // not blocked
+    function timeTillLocked(address account) public view returns (uint256) {
+        if (_transferDeadline[account] == 0) {
+            return type(uint256).max;   // not locked
         }
-        if (_lastTransferTimestamp[account] > 0 && block.timestamp >= _lastTransferTimestamp[account].add(lockTimerInSeconds)) {
-            return 0;   // blocked
+        if (_transferDeadline[account] > 0 && block.timestamp >= _transferDeadline[account]) {
+            return 0;                   // locked
         }
-        return _lastTransferTimestamp[account].add(lockTimerInSeconds).sub(block.timestamp);
+        return _transferDeadline[account].sub(block.timestamp);
     }
 
     function updatePercentage(uint256 dev, uint256 burn, uint256 reward) external onlyOwner {
@@ -105,35 +105,55 @@ contract DeflationLabsToken is ERC20, Ownable {
 
     function transfer(address to, uint256 amount) public override returns (bool) {
         address owner = msg.sender;
-        require(!isBlocked(owner) && !isBlocked(to), 'Timeout, sender or receiver is blocked');
+        require(!isLocked(owner) && !isLocked(to), 'Timeout, sender or receiver is locked');
+        {
         (uint256 devAmount, uint256 burn, uint256 rewardAmount, uint256 transferAmount) = _calculateAmount(amount);
-        _transfer(owner, devAddress, devAmount);
+        if (owner != devAddress) {
+            _transfer(owner, devAddress, devAmount);
+        } else {
+            _burn(devAddress, devAmount);
+        }
         _burn(owner, burn);
-        _transfer(owner, rewardAddress, rewardAmount);
+        if (owner != rewardAddress) {
+            _transfer(owner, rewardAddress, rewardAmount);
+        } else {
+            _burn(rewardAddress, rewardAmount);
+        }
         _transfer(owner, to, transferAmount);
-        if (_lastTransferTimestamp[owner] == 0) {
-            _lastTransferTimestamp[owner] = block.timestamp;
+        }
+        if (_transferDeadline[to] == 0 && !allowlist[to]) {
+            _transferDeadline[to] = lockTimerInSeconds.add(block.timestamp);
         }
         if (balanceOf(owner) == 0) {
-            _lastTransferTimestamp[owner] = 0;  // unblock wallet when it transfers out all token
+            _transferDeadline[owner] = 0;  // unblock wallet when it transfers out all token
         }
         return true;
     }
 
     function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
         address spender = msg.sender;
-        require(!isBlocked(from) && !isBlocked(to), 'Timeout, sender or receiver is blocked');
+        require(!isLocked(from) && !isLocked(to), 'Timeout, sender or receiver is locked');
+        {
         (uint256 devAmount, uint256 burnAmount, uint256 rewardAmount, uint256 transferAmount) = _calculateAmount(amount);
-        _transfer(from, devAddress, devAmount);
+        if (from != devAddress) {
+            _transfer(from, devAddress, devAmount);
+        } else {
+            _burn(devAddress, devAmount);
+        }
         _burn(from, burnAmount);
-        _transfer(from, rewardAddress, rewardAmount);
+        if (from != rewardAddress) {
+            _transfer(from, rewardAddress, rewardAmount);
+        } else {
+            _burn(rewardAddress, rewardAmount);
+        }
         _spendAllowance(from, spender, transferAmount);
         _transfer(from, to, transferAmount);
-        if (_lastTransferTimestamp[from] == 0) {
-            _lastTransferTimestamp[from] = block.timestamp;
+        }
+        if (_transferDeadline[to] == 0 && !allowlist[to]) {
+            _transferDeadline[to] = lockTimerInSeconds.add(block.timestamp);
         }
         if (balanceOf(from) == 0) {
-            _lastTransferTimestamp[from] = 0;   // unblock wallet when it transfers out all token
+            _transferDeadline[from] = 0;   // unblock wallet when it transfers out all token
         }
         return true;
     }

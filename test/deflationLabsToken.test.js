@@ -7,7 +7,7 @@ const {expect} = require('chai');
 const DeflationLabsToken = contract.fromArtifact('DeflationLabsToken');
 
 describe('DeflationLabsTokenTest', () => {
-    const [owner, dev, reward, user] = accounts;
+    const [owner, dev, reward, user, user2] = accounts;
 
     beforeEach(async() => {
         this.dlt = await DeflationLabsToken.new({from: owner});
@@ -20,8 +20,8 @@ describe('DeflationLabsTokenTest', () => {
         expect((await this.dlt.devPercent()).toNumber()).to.equal(2);
         expect((await this.dlt.burnPercent()).toNumber()).to.equal(5);
         expect((await this.dlt.rewardPercent()).toNumber()).to.equal(3);
-        expect(await this.dlt.isBlocked(owner)).to.be.false;
-        expect(await this.dlt.isBlocked(user)).to.be.false;
+        expect(await this.dlt.isLocked(owner)).to.be.false;
+        expect(await this.dlt.isLocked(user)).to.be.false;
         expect(await this.dlt.devAddress()).to.equal(dev);
         expect(await this.dlt.rewardAddress()).to.equal(reward);
     });
@@ -54,7 +54,7 @@ describe('DeflationLabsTokenTest', () => {
     })
 
     it('Transfer works correctly', async() => {
-        const amount = 100;
+        const amount = 200;
         const totalSupplyBefore = (await this.dlt.totalSupply()).toNumber();
         const balanceBefore = (await this.dlt.balanceOf(owner)).toNumber();
         await this.dlt.transfer(user, amount, {from: owner});
@@ -74,6 +74,32 @@ describe('DeflationLabsTokenTest', () => {
         // console.log(userBalance, devBalance, rewardBalance);
         expect(userBalance + burnAmount + rewardBalance + devBalance).to.equal(amount);
         expect(totalSupplyAfter + burnAmount).to.equal(totalSupplyBefore);
+
+        // transfer a small amount will not deflate
+        const smallAmount = 10;
+        await this.dlt.transfer(user2, smallAmount, {from: user});
+        expect((await this.dlt.balanceOf(user2)).toNumber()).to.equal(smallAmount);
+        expect((await this.dlt.balanceOf(user)).toNumber()).to.equal(userBalance - smallAmount);
+    });
+
+    it('Transfer works correctly between dev and reward', async() => {
+        const amount = 1000000;
+        await this.dlt.transfer(user, amount, {from: owner});
+        const devBalance = (await this.dlt.balanceOf(dev)).toNumber();
+        const devPercent = (await this.dlt.devPercent()).toNumber();
+        expect(devBalance).to.equal(amount * devPercent / 100);
+        const rewardBalance = (await this.dlt.balanceOf(reward)).toNumber();
+        const rewardPercent = (await this.dlt.rewardPercent()).toNumber();
+        const burnPercent = (await this.dlt.burnPercent()).toNumber();
+        expect(rewardBalance).to.equal(amount * rewardPercent / 100);
+        await this.dlt.transfer(reward, devBalance, {from: dev});
+        expect((await this.dlt.balanceOf(dev)).toNumber()).to.equal(0);
+        const rewardBalanceAfter = (await this.dlt.balanceOf(reward)).toNumber();
+        expect(rewardBalanceAfter).to.equal(rewardBalance + devBalance * (100 - devPercent  - burnPercent) / 100);
+        await this.dlt.transfer(dev, rewardBalanceAfter, {from: reward});
+        expect((await this.dlt.balanceOf(reward)).toNumber()).to.equal(0);
+        const devBalanceAfter = (await this.dlt.balanceOf(dev)).toNumber();
+        expect(devBalanceAfter).to.equal(rewardBalanceAfter * (100 - rewardPercent - burnPercent) / 100);
     });
 
     it('Transfer works correctly with updated percent', async() => {
@@ -102,30 +128,34 @@ describe('DeflationLabsTokenTest', () => {
 
     it('Timelock works correctly in transfer', async() => {
         const amount = 100;
-        const balanceBefore = (await this.dlt.balanceOf(owner)).toNumber();
-        await this.dlt.transfer(user, amount, {from: owner});   // _lastTransferTimestamp for owner is updated
-        await time.increase(time.duration.hours(35));           // increase block timestamp by 35 hours, not locked yet
-        await this.dlt.transfer(user, amount, {from: owner});   // this should still work
-        const balanceAfter = (await this.dlt.balanceOf(owner)).toNumber();
-        expect(balanceAfter + 2 * amount).to.equal(balanceBefore);
-        await time.increase(time.duration.hours(1) + 1);        // increase block timestamp by one more hour, should be locked
+        await this.dlt.transfer(user, amount, {from: owner});   // _transferDeadline for user is updated
+        expect((await this.dlt.timeTillLocked(user)).eq(constants.MAX_UINT256)).to.be.false;
+        await time.increase(time.duration.hours(35));           // user is not locked yet after 35 hours
+        await this.dlt.transfer(user2, 50, {from: user});       // this transfer will succeed
+        await time.increase(time.duration.hours(1) + 1);        // user will be locked
         await expectRevert(
-            this.dlt.transfer(user, amount, {from: owner}),     // this should be blocked
-            'Timeout, sender or receiver is blocked'
+            this.dlt.transfer(user2, 10, {from: user}),         // this should be blocked
+            'Timeout, sender or receiver is locked'
         );
-        expect(await this.dlt.isBlocked(owner)).to.be.true;
-        expect(await this.dlt.isBlocked(user)).to.be.false;
+
+        expect((await this.dlt.timeTillLocked(user)).eq(new BN(0))).to.be.true;
+        expect(await this.dlt.isLocked(user)).to.be.true;
+        expect((await this.dlt.timeTillLocked(user2)).eq(constants.MAX_UINT256)).to.be.false;
+        expect(await this.dlt.isLocked(user2)).to.be.false;
     });
 
     it('Timelock resets correctly in transfer', async() => {
         const amount = 100;
-        const balanceBefore = (await this.dlt.balanceOf(owner)).toNumber();
-        await this.dlt.transfer(user, amount, {from: owner});   // _lastTransferTimestamp for owner is updated
-        await time.increase(time.duration.hours(35));           // increase block timestamp by 35 hours, not locked yet
-        const balance = (await this.dlt.balanceOf(owner)).toNumber();
-        await this.dlt.transfer(user, balance, {from: owner});  // this should reset the lock because owner's balance is empty
-        await time.increase(time.duration.hours(1) + 1);        // increase block timestamp by one more hour
-        expect(await this.dlt.isBlocked(owner)).to.be.false;    // owner is not blocked after 36 hours
-        expect(await this.dlt.isBlocked(user)).to.be.false;
+        await this.dlt.transfer(user, amount, {from: owner});   // _transferDeadline for user is updated
+        expect((await this.dlt.timeTillLocked(user)).eq(constants.MAX_UINT256)).to.be.false;
+        await time.increase(time.duration.hours(35));           // user is not locked yet after 35 hours
+        const userBalance = (await this.dlt.balanceOf(user)).toNumber();
+        await this.dlt.transfer(user2, userBalance, {from: user});  // this will reset the _transferDeadline
+        expect((await this.dlt.timeTillLocked(user)).eq(constants.MAX_UINT256)).to.be.true;
+        expect(await this.dlt.isLocked(user)).to.be.false;
+    });
+
+    it('timeTillLocked works correctly', async() => {
+
     });
 });
