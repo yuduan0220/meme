@@ -51,9 +51,6 @@ contract DeflationLabsToken is ERC20, Ownable {
     }
 
     function airdropEligible(address account, bytes32[] calldata proof) public view returns (bool, uint256) {
-        if (!airdropActive || block.timestamp > airdropDeadline) {
-            return (false, 0);      // airdrop finished
-        }
         bytes32 leaf = keccak256(abi.encodePacked(account));
         if (MerkleProof.verify(proof, merkleRoot, leaf)) {
             if (!claimed[account]) {
@@ -103,9 +100,19 @@ contract DeflationLabsToken is ERC20, Ownable {
         airdropDeadline = airdropDuration.add(block.timestamp);
     }
 
+    function claimAirdrop(bytes32[] calldata proof) external {
+        require(airdropActive, 'airdrop not started');
+        require(block.timestamp <= airdropDeadline, 'airdrop finished');
+        (bool eligible, uint256 amount) = airdropEligible(msg.sender, proof);
+        require(eligible, 'not eligible');
+        require(amount > 0, 'no token left');
+        claimed[msg.sender] = true;
+        transfer(msg.sender, amount);
+    }
+
     function transfer(address to, uint256 amount) public override returns (bool) {
         address owner = msg.sender;
-        require(!isLocked(owner) && !isLocked(to), 'Timeout, sender or receiver is locked');
+        require(!isLocked(owner) && !isLocked(to), 'sender or receiver is locked');
         {
         (uint256 devAmount, uint256 burn, uint256 rewardAmount, uint256 transferAmount) = _calculateAmount(amount);
         if (owner != devAddress) {
@@ -132,7 +139,7 @@ contract DeflationLabsToken is ERC20, Ownable {
 
     function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
         address spender = msg.sender;
-        require(!isLocked(from) && !isLocked(to), 'Timeout, sender or receiver is locked');
+        require(!isLocked(from) && !isLocked(to), 'sender or receiver is locked');
         {
         (uint256 devAmount, uint256 burnAmount, uint256 rewardAmount, uint256 transferAmount) = _calculateAmount(amount);
         if (from != devAddress) {
@@ -168,6 +175,7 @@ contract DeflationLabsToken is ERC20, Ownable {
 
     function _getDecayedAirdropAmount() private view returns (uint256) {
         // TODO: add decay logic
-        return baseAirdropAmount;
+        uint256 tokenLeft = balanceOf(address(this));
+        return baseAirdropAmount > tokenLeft ? baseAirdropAmount : tokenLeft;
     }
 }

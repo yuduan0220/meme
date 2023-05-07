@@ -135,7 +135,7 @@ describe('DeflationLabsTokenTest', () => {
         await time.increase(time.duration.hours(1) + 1);        // user will be locked
         await expectRevert(
             this.dlt.transfer(user2, 10, {from: user}),         // this should be blocked
-            'Timeout, sender or receiver is locked'
+            'sender or receiver is locked'
         );
 
         expect((await this.dlt.timeTillLocked(user)).eq(new BN(0))).to.be.true;
