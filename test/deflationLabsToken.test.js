@@ -146,9 +146,13 @@ describe('DeflationLabsTokenTest', () => {
         expect((await this.dlt.timeTillLocked(user)).eq(constants.MAX_UINT256)).to.be.false;
         await time.increase(time.duration.hours(35));           // user is not locked yet after 35 hours
         await this.dlt.transfer(user2, 50, {from: user});       // this transfer will succeed
-        await time.increase(time.duration.hours(2));        // user will be locked
+        await time.increase(time.duration.hours(2));            // user will be locked
         await expectRevert(
             this.dlt.transfer(user2, 10, {from: user}),         // this should be blocked
+            'sender or receiver is locked'
+        );
+        await expectRevert(
+            this.dlt.transfer(user, 10, {from: owner}),         // this should be blocked
             'sender or receiver is locked'
         );
 
