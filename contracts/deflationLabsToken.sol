@@ -125,7 +125,7 @@ contract DeflationLabsToken is ERC20, Ownable {
             _transferDeadline[to] = lockTimerInSeconds.add(block.timestamp);
         }
         if (balanceOf(owner) == 0) {
-            _transferDeadline[owner] = 0;  // unblock wallet when it transfers out all token
+            _transferDeadline[owner] = 0;  // unlock wallet when it transfers out all token
         }
         return true;
     }
@@ -153,7 +153,7 @@ contract DeflationLabsToken is ERC20, Ownable {
             _transferDeadline[to] = lockTimerInSeconds.add(block.timestamp);
         }
         if (balanceOf(from) == 0) {
-            _transferDeadline[from] = 0;   // unblock wallet when it transfers out all token
+            _transferDeadline[from] = 0;   // unlock wallet when it transfers out all token
         }
         return true;
     }

@@ -156,6 +156,19 @@ describe('DeflationLabsTokenTest', () => {
     });
 
     it('timeTillLocked works correctly', async() => {
+        const amount = 100;
+        await this.dlt.transfer(user, amount, {from: owner});   // _transferDeadline for user is updated
+        const lockTimerInSeconds = (await this.dlt.lockTimerInSeconds()).toNumber();
+        expect((await this.dlt.timeTillLocked(user)).toNumber()).to.equal(lockTimerInSeconds);
+        await time.increase(time.duration.hours(1));
+        expect((await this.dlt.timeTillLocked(user)).toNumber()).to.equal(lockTimerInSeconds - 60 * 60);
+        await time.increase(time.duration.hours(35) + 1);
+        expect((await this.dlt.timeTillLocked(user)).toNumber()).to.equal(0);
+        expect(await this.dlt.isLocked(user)).to.be.true;
 
+        expect((await this.dlt.timeTillLocked(user2)).eq(constants.MAX_UINT256)).to.be.true;    // not locked
+        expect((await this.dlt.timeTillLocked(owner)).eq(constants.MAX_UINT256)).to.be.true;    // not locked
+        expect((await this.dlt.timeTillLocked(dev)).eq(constants.MAX_UINT256)).to.be.true;      // not locked
+        expect((await this.dlt.timeTillLocked(reward)).eq(constants.MAX_UINT256)).to.be.true;   // not locked
     });
 });
