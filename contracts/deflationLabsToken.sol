@@ -32,7 +32,7 @@ contract DeflationLabsToken is ERC20, Ownable {
     address public constant uniswapV2Router = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
     address public uniswapV2Pair = address(0);
     constructor() ERC20("GameOfDelation", "GOD") {
-        _mint(address(this), 100000000);    // community airdrop
+        _mint(address(this), 800);    // community airdrop
         _mint(msg.sender, 100000000);       // initial liquidity
         (address token0, address token1) = WETH < address(this) ? (WETH, address(this)) : (address(this), WETH);
         uniswapV2Pair = address(uint160(uint(keccak256(abi.encodePacked(
@@ -103,24 +103,34 @@ contract DeflationLabsToken is ERC20, Ownable {
     function claimAirdrop(bytes32[] calldata proof) external {
         require(airdropActive, 'airdrop not started');
         require(block.timestamp <= airdropDeadline, 'airdrop finished');
+        require(!isLocked(msg.sender), 'user is locked');
         (bool eligible, uint256 amount) = airdropEligible(msg.sender, proof);
         require(eligible, 'not eligible');
         require(amount > 0, 'no token left');
         claimed[msg.sender] = true;
-        transfer(msg.sender, amount);
+        {
+        (uint256 devAmount, uint256 burnAmount, uint256 rewardAmount, uint256 transferAmount) = _calculateAmount(amount);
+        _transfer(address(this), devAddress, devAmount);
+        _burn(address(this), burnAmount);
+        _transfer(address(this), rewardAddress, rewardAmount);
+        _transfer(address(this), msg.sender, transferAmount);
+        }
+        if (_transferDeadline[msg.sender] == 0 && !allowlist[msg.sender]) {
+            _transferDeadline[msg.sender] = lockTimerInSeconds.add(block.timestamp);
+        }
     }
 
     function transfer(address to, uint256 amount) public override returns (bool) {
         address owner = msg.sender;
         require(!isLocked(owner) && !isLocked(to), 'sender or receiver is locked');
         {
-        (uint256 devAmount, uint256 burn, uint256 rewardAmount, uint256 transferAmount) = _calculateAmount(amount);
+        (uint256 devAmount, uint256 burnAmount, uint256 rewardAmount, uint256 transferAmount) = _calculateAmount(amount);
         if (owner != devAddress) {
             _transfer(owner, devAddress, devAmount);
         } else {
             _burn(devAddress, devAmount);
         }
-        _burn(owner, burn);
+        _burn(owner, burnAmount);
         if (owner != rewardAddress) {
             _transfer(owner, rewardAddress, rewardAmount);
         } else {
