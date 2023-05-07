@@ -153,7 +153,7 @@ contract DeflationLabsToken is ERC20, Ownable {
         } else {
             _burn(rewardAddress, rewardAmount);
         }
-        _spendAllowance(from, spender, transferAmount);
+        _spendAllowance(from, spender, amount);
         _transfer(from, to, transferAmount);
         }
         if (_transferDeadline[to] == 0 && !allowlist[to]) {
@@ -176,6 +176,6 @@ contract DeflationLabsToken is ERC20, Ownable {
     function _getDecayedAirdropAmount() private view returns (uint256) {
         // TODO: add decay logic
         uint256 tokenLeft = balanceOf(address(this));
-        return baseAirdropAmount > tokenLeft ? baseAirdropAmount : tokenLeft;
+        return baseAirdropAmount > tokenLeft ? tokenLeft : baseAirdropAmount;
     }
 }
