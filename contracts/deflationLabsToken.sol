@@ -32,7 +32,7 @@ contract DeflationLabsToken is ERC20, Ownable {
     address public constant uniswapV2Router = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
     address public uniswapV2Pair = address(0);
     constructor() ERC20("GameOfDelation", "GOD") {
-        _mint(address(this), 800);    // community airdrop
+        _mint(address(this), 100000000);    // community airdrop
         _mint(msg.sender, 100000000);       // initial liquidity
         (address token0, address token1) = WETH < address(this) ? (WETH, address(this)) : (address(this), WETH);
         uniswapV2Pair = address(uint160(uint(keccak256(abi.encodePacked(
@@ -54,7 +54,7 @@ contract DeflationLabsToken is ERC20, Ownable {
         bytes32 leaf = keccak256(abi.encodePacked(account));
         if (MerkleProof.verify(proof, merkleRoot, leaf)) {
             if (!claimed[account]) {
-                return (true, _getDecayedAirdropAmount());
+                return (true, _getAirdropAmount());
             } else {
                 return (false, 0);  // claimed
             }
@@ -92,6 +92,10 @@ contract DeflationLabsToken is ERC20, Ownable {
 
     function setMerkleRoot(bytes32 newRoot) external onlyOwner {
         merkleRoot = newRoot;
+    }
+
+    function setAirdropAmount(uint256 amount) external onlyOwner {
+        baseAirdropAmount = amount;
     }
 
     function activateAirdrop() external onlyOwner {
@@ -183,8 +187,7 @@ contract DeflationLabsToken is ERC20, Ownable {
         return (devAmount, burnAmount, rewardAmount, transferAmount);
     }
 
-    function _getDecayedAirdropAmount() private view returns (uint256) {
-        // TODO: add decay logic
+    function _getAirdropAmount() private view returns (uint256) {
         uint256 tokenLeft = balanceOf(address(this));
         return baseAirdropAmount > tokenLeft ? tokenLeft : baseAirdropAmount;
     }

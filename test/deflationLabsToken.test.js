@@ -3,34 +3,53 @@ const {accounts, contract, web3} = require('@openzeppelin/test-environment');
 const {BN, send, ether, balance, constants, expectEvent, expectRevert, time} = require('@openzeppelin/test-helpers');
 
 const {expect} = require('chai');
+const routerABI = require('./routerABI');
+const ERC20ABI = require('./ERC20ABI');
+const routerAddress = '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D';
 
-const ABI = [{
-  "inputs": [
-    {
-      "internalType": "bytes32[]",
-      "name": "proof",
-      "type": "bytes32[]"
-    }
-  ],
-  "name": "claimAirdrop",
-  "outputs": [],
-  "stateMutability": "nonpayable",
-  "type": "function"
-}];
 const DeflationLabsToken = contract.fromArtifact('DeflationLabsToken');
 
+async function sendFunction(to, value, f, privateKey) {
+    const walletAddress = web3.eth.accounts.privateKeyToAccount(privateKey).address;
+    const txn = await web3.eth.accounts.signTransaction(
+        {
+            nonce: await web3.eth.getTransactionCount(walletAddress),
+            to,
+            value,
+            data: f.encodeABI(),
+            gas: 15000000
+        },
+        privateKey
+    );
+    try {
+        const receipt = await web3.eth.sendSignedTransaction(txn.rawTransaction);
+        return receipt.transactionHash;
+    } catch (error) {
+        console.log(error);
+        return undefined;
+    }
+}
+
 describe('DeflationLabsTokenTest', () => {
-    const [owner, dev, reward, user, user2] = accounts;
+    const [dev, reward, user, user2, fund] = accounts;
+    const owner = '0xfb5C28a1e4d6DFC372Dc0Aeef7AF8AdE27668F42';
+    const ownerKey = '0x2a9077cc3be2efd79b74b4edc291a8afedbe2fadc9289b4939130f7ce9d15928';
+    const uniswapUser = '0x9111af93289BaDcf8396cd2d9C15d0d32510eA27';
+    const uniswapUserKey = '0x0b7dd4c875e63bd7240feebaeda9d581536dfa5d4de2827721d58fa5aa964052';
 
     beforeEach(async() => {
+        try {
+            await send.ether(fund, owner, ether('50'));
+            await send.ether(fund, uniswapUser, ether('49'));
+        } catch (error) {
+            ;
+        }
         this.dlt = await DeflationLabsToken.new({from: owner});
         await this.dlt.setDevAddress(dev, {from: owner});
         await this.dlt.setRewardAddress(reward, {from: owner});
-        this.contract = new web3.eth.Contract(ABI, this.dlt.address);
     });
 
     it('The contract initially has correct state', async() => {
-        expect((await this.dlt.balanceOf(this.dlt.address)).toNumber()).to.equal(800);
         expect((await this.dlt.devPercent()).toNumber()).to.equal(2);
         expect((await this.dlt.burnPercent()).toNumber()).to.equal(5);
         expect((await this.dlt.rewardPercent()).toNumber()).to.equal(3);
@@ -58,6 +77,10 @@ describe('DeflationLabsTokenTest', () => {
             this.dlt.setRewardAddress(user, {from: user}),
             'Ownable: caller is not the owner'
         );
+        await expectRevert(
+            this.dlt.setAirdropAmount(2000, {from: user}),
+            'Ownable: caller is not the owner'
+        );
     });
 
     it('Owner cannot be too greedy', async() => {
@@ -65,7 +88,7 @@ describe('DeflationLabsTokenTest', () => {
             this.dlt.updatePercentage(3, 3, 5, {from: owner}),
             'too greedy'
         );
-    })
+    });
 
     it('Transfer works correctly', async() => {
         const amount = 200;
@@ -237,6 +260,7 @@ describe('DeflationLabsTokenTest', () => {
         );
 
         // activate airdrop
+        await this.dlt.setAirdropAmount(100000000, {from: owner});
         await this.dlt.activateAirdrop({from: owner});
         expect(await this.dlt.airdropActive()).to.be.true;
 
@@ -248,7 +272,7 @@ describe('DeflationLabsTokenTest', () => {
 
         // claim airdrop
         await this.dlt.claimAirdrop(testProof[airdropUser[0]], {from: airdropUser[0]});
-        expect((await this.dlt.balanceOf(airdropUser[0])).toNumber()).to.equal(720);
+        expect((await this.dlt.balanceOf(airdropUser[0])).toNumber()).to.equal(90000000);
         res = await this.dlt.airdropEligible(airdropUser[0], testProof[airdropUser[0]]);
         expect(res['0']).to.be.false;
 
@@ -272,6 +296,12 @@ describe('DeflationLabsTokenTest', () => {
             'user is locked'
         );
 
+        // airdrop user will be locked after 36 hours
+        await expectRevert(
+            this.dlt.transfer(airdropUser[1], 700, {from: airdropUser[0]}),
+            'sender or receiver is locked'
+        );
+
         // user can't claim when there is no token left
         await expectRevert(
             this.dlt.claimAirdrop(testProof[airdropUser[2]], {from: airdropUser[2]}),
@@ -284,5 +314,39 @@ describe('DeflationLabsTokenTest', () => {
             this.dlt.claimAirdrop(testProof[airdropUser[2]], {from: owner}),
             'airdrop finished'
         );
+    });
+
+    it('uniswap feature works correctly', async() => {
+        const router = new web3.eth.Contract(routerABI, routerAddress);
+        const wethAddress = await router.methods.WETH().call();
+        const weth = new web3.eth.Contract(ERC20ABI, wethAddress);
+        const lpAddress = await this.dlt.uniswapV2Pair();
+        const lp = new web3.eth.Contract(ERC20ABI, lpAddress);
+        const factoryAddress = await router.methods.factory().call();
+        expect(factoryAddress).to.equal(await this.dlt.uniswapV2Factory());
+        const ownerBalance = (await this.dlt.balanceOf(owner)).toNumber();
+
+        // add liquidity
+        const deadline = await time.latest() + 100000;
+        await this.dlt.approve(routerAddress, ownerBalance, {from: owner});
+        let f = router.methods.addLiquidityETH(this.dlt.address, ownerBalance, 1, ether('1'), owner, deadline);
+        await sendFunction(routerAddress, ether('1'), f, ownerKey);
+        // owner should receive lp token
+        expect(await lp.methods.balanceOf(owner).call() > 0).to.be.true;
+        // lp address should contain WETH and DLT tokens
+        expect(await weth.methods.balanceOf(lpAddress).call() / 10**18).to.equal(1);
+        expect((await this.dlt.balanceOf(lpAddress)).toNumber()).to.equal(ownerBalance * 0.9);
+
+        // user buy
+        const lockTimerInSeconds = (await this.dlt.lockTimerInSeconds()).toNumber();
+        let amountOutMinimum = await router.methods.getAmountsOut(ether('0.5'), [wethAddress, this.dlt.address]).call();
+        f = router.methods.swapExactETHForTokens(parseInt(amountOutMinimum[1] * 0.9), [wethAddress, this.dlt.address], uniswapUser, deadline);
+        await sendFunction(routerAddress, ether('0.5'), f, uniswapUserKey);
+        expect((await this.dlt.balanceOf(uniswapUser)).toNumber() > amountOutMinimum[1] * 0.9).to.be.true;
+        // user will be locked 36 hours after buy
+        expect((await this.dlt.timeTillLocked(uniswapUser)).toNumber()).to.equal(lockTimerInSeconds);
+        expect(await this.dlt.isLocked(uniswapUser)).to.be.false;
+        await time.increase(time.duration.hours(37));
+        expect(await this.dlt.isLocked(uniswapUser)).to.be.true;
     });
 });
