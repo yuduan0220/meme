@@ -335,7 +335,7 @@ describe('DeflationLabsTokenTest', () => {
         expect(await lp.methods.balanceOf(owner).call() > 0).to.be.true;
         // lp address should contain WETH and DLT tokens
         expect(await weth.methods.balanceOf(lpAddress).call() / 10**18).to.equal(1);
-        expect((await this.dlt.balanceOf(lpAddress)).toNumber()).to.equal(ownerBalance * 0.9);
+        expect((await this.dlt.balanceOf(lpAddress)).toNumber()).to.equal(ownerBalance);
 
         // user buy
         const lockTimerInSeconds = (await this.dlt.lockTimerInSeconds()).toNumber();
@@ -343,10 +343,21 @@ describe('DeflationLabsTokenTest', () => {
         f = router.methods.swapExactETHForTokens(parseInt(amountOutMinimum[1] * 0.9), [wethAddress, this.dlt.address], uniswapUser, deadline);
         await sendFunction(routerAddress, ether('0.5'), f, uniswapUserKey);
         expect((await this.dlt.balanceOf(uniswapUser)).toNumber() > amountOutMinimum[1] * 0.9).to.be.true;
-        // user will be locked 36 hours after buy
+        // _transferDeadline is updated for the user but not locked yet
         expect((await this.dlt.timeTillLocked(uniswapUser)).toNumber()).to.equal(lockTimerInSeconds);
         expect(await this.dlt.isLocked(uniswapUser)).to.be.false;
+        // user sell partial tokens won't reset the lock
+        await this.dlt.approve(routerAddress, 10000, {from: uniswapUser});
+        amountOutMinimum = await router.methods.getAmountsOut(10000, [this.dlt.address, wethAddress]).call();
+        f = router.methods.swapExactTokensForETH(10000, amountOutMinimum[1], [this.dlt.address, wethAddress], uniswapUser, deadline);
+        await sendFunction(routerAddress, 0, f, uniswapUserKey);
         await time.increase(time.duration.hours(37));
         expect(await this.dlt.isLocked(uniswapUser)).to.be.true;
+
+        // user sell all tokens reset the lock
+
+        // withdraw partial liquidity
+
+        // add liquidity
     });
 });

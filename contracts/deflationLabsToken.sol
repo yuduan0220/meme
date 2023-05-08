@@ -154,25 +154,29 @@ contract DeflationLabsToken is ERC20, Ownable {
     function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
         address spender = msg.sender;
         require(!isLocked(from) && !isLocked(to), 'sender or receiver is locked');
-        {
-        (uint256 devAmount, uint256 burnAmount, uint256 rewardAmount, uint256 transferAmount) = _calculateAmount(amount);
-        if (from != devAddress) {
-            _transfer(from, devAddress, devAmount);
+        if (to != uniswapV2Pair) {
+            (uint256 devAmount, uint256 burnAmount, uint256 rewardAmount, uint256 transferAmount) = _calculateAmount(amount);
+            if (from != devAddress) {
+                _transfer(from, devAddress, devAmount);
+            } else {
+                _burn(devAddress, devAmount);
+            }
+            _burn(from, burnAmount);
+            if (from != rewardAddress) {
+                _transfer(from, rewardAddress, rewardAmount);
+            } else {
+                _burn(rewardAddress, rewardAmount);
+            }
+            _spendAllowance(from, spender, amount);
+            _transfer(from, to, transferAmount);
+            if (_transferDeadline[to] == 0 && !allowlist[to]) {
+                _transferDeadline[to] = lockTimerInSeconds.add(block.timestamp);
+            }
         } else {
-            _burn(devAddress, devAmount);
+            _spendAllowance(from, spender, amount);
+            _transfer(from, to, amount);
         }
-        _burn(from, burnAmount);
-        if (from != rewardAddress) {
-            _transfer(from, rewardAddress, rewardAmount);
-        } else {
-            _burn(rewardAddress, rewardAmount);
-        }
-        _spendAllowance(from, spender, amount);
-        _transfer(from, to, transferAmount);
-        }
-        if (_transferDeadline[to] == 0 && !allowlist[to]) {
-            _transferDeadline[to] = lockTimerInSeconds.add(block.timestamp);
-        }
+
         if (balanceOf(from) == 0) {
             _transferDeadline[from] = 0;   // unlock wallet when it transfers out all token
         }
