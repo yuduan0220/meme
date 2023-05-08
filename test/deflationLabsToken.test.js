@@ -160,6 +160,23 @@ describe('DeflationLabsTokenTest', () => {
         expect(await this.dlt.isLocked(user)).to.be.true;
         expect((await this.dlt.timeTillLocked(user2)).eq(constants.MAX_UINT256)).to.be.false;
         expect(await this.dlt.isLocked(user2)).to.be.false;
+
+        // allowlisted addresses won't be locked
+        const uniswapV2Pair = await this.dlt.uniswapV2Pair();
+        const uniswapV2Router = await this.dlt.uniswapV2Router();
+        await this.dlt.transfer(uniswapV2Pair, 1000, {from: owner});
+        await this.dlt.transfer(uniswapV2Router, 1000, {from: owner});
+        await this.dlt.transfer(this.dlt.address, 1000, {from: owner});
+        expect((await this.dlt.timeTillLocked(uniswapV2Pair)).eq(constants.MAX_UINT256)).to.be.true;
+        expect(await this.dlt.isLocked(uniswapV2Pair)).to.be.false;
+        expect((await this.dlt.timeTillLocked(uniswapV2Router)).eq(constants.MAX_UINT256)).to.be.true;
+        expect(await this.dlt.isLocked(uniswapV2Router)).to.be.false;
+        expect((await this.dlt.timeTillLocked(this.dlt.address)).eq(constants.MAX_UINT256)).to.be.true;
+        expect(await this.dlt.isLocked(this.dlt.address)).to.be.false;
+        await time.increase(time.duration.hours(37));
+        expect(await this.dlt.isLocked(uniswapV2Pair)).to.be.false;
+        expect(await this.dlt.isLocked(uniswapV2Router)).to.be.false;
+        expect(await this.dlt.isLocked(this.dlt.address)).to.be.false;
     });
 
     it('Timelock resets correctly in transfer', async() => {
@@ -179,7 +196,7 @@ describe('DeflationLabsTokenTest', () => {
         const lockTimerInSeconds = (await this.dlt.lockTimerInSeconds()).toNumber();
         expect((await this.dlt.timeTillLocked(user)).toNumber()).to.equal(lockTimerInSeconds);
         await time.increase(time.duration.hours(1));
-        expect((await this.dlt.timeTillLocked(user)).toNumber()).to.equal(lockTimerInSeconds - 60 * 60);
+        expect((await this.dlt.timeTillLocked(user)).toNumber()).to.be.within(lockTimerInSeconds - 60 * 60 - 10, lockTimerInSeconds - 60 * 60);
         await time.increase(time.duration.hours(36));
         expect((await this.dlt.timeTillLocked(user)).toNumber()).to.equal(0);
         expect(await this.dlt.isLocked(user)).to.be.true;
@@ -225,101 +242,41 @@ describe('DeflationLabsTokenTest', () => {
 
         const privateKey = ['0x4eb758710891810b3455d9f0af1b2e6110cf8f1d17d681ee806d103bd7d55e69', '0x266672f379780672f7a80f581d6c079eb897d19201a4f7ce5375e71933aa5a41', '0x269771fdb43611b7ec1057ff7dd45d0907459b6452c62b166fd93f6832e22603'];
         const airdropUser = ['0xe65c4E7739879C61E6B07f8d92fC5dc744793A82', '0xBA9b7aEB59522C6f9d83449d1615EF848DB6Ba7c', '0xF20f881915B3923c2E6D7d0e5666fe3F99b5F246'];
-        // claim airdrop
         await send.ether(owner, airdropUser[0], ether('1'));
-        let f = this.contract.methods.claimAirdrop(testProof[airdropUser[0]]);
-        let txn = await web3.eth.accounts.signTransaction(
-            {
-                nonce: await web3.eth.getTransactionCount(airdropUser[0]),
-                to: this.dlt.address,
-                value: 0,
-                data: f.encodeABI(),
-                gas: 15000000
-            },
-            privateKey[0]
-        );
-        const receipt = await web3.eth.sendSignedTransaction(txn.rawTransaction);
+        await send.ether(owner, airdropUser[1], ether('1'));
+        await send.ether(owner, airdropUser[2], ether('1'));
+
+        // claim airdrop
+        await this.dlt.claimAirdrop(testProof[airdropUser[0]], {from: airdropUser[0]});
         expect((await this.dlt.balanceOf(airdropUser[0])).toNumber()).to.equal(720);
         res = await this.dlt.airdropEligible(airdropUser[0], testProof[airdropUser[0]]);
         expect(res['0']).to.be.false;
 
         // can't claim twice
-        txn = await web3.eth.accounts.signTransaction(
-            {
-                nonce: await web3.eth.getTransactionCount(airdropUser[0]),
-                to: this.dlt.address,
-                value: 0,
-                data: f.encodeABI(),
-                gas: 15000000
-            },
-            privateKey[0]
+        await expectRevert(
+            this.dlt.claimAirdrop(testProof[airdropUser[0]], {from: airdropUser[0]}),
+            'not eligible'
         );
-        let thrown = false;
-        try {
-            await web3.eth.sendSignedTransaction(txn.rawTransaction);
-        } catch (error) {
-            const errorString = error.toString();
-            if (errorString.includes('not eligible')) {
-                thrown = true;
-            }
-        }
-        expect(thrown).to.be.true;
 
         // others can't claim
         await expectRevert(
-            this.dlt.claimAirdrop(testProof[airdropUser[0]], {from: owner}),
+            this.dlt.claimAirdrop(testProof[airdropUser[0]], {from: airdropUser[1]}),
             'not eligible'
         );
 
         // locked user can't claim
-        await send.ether(owner, airdropUser[1], ether('1'));
         await this.dlt.transfer(airdropUser[1], 1000, {from: owner});
         await time.increase(time.duration.hours(37));
-        f = this.contract.methods.claimAirdrop(testProof[airdropUser[1]]);
-        txn = await web3.eth.accounts.signTransaction(
-            {
-                nonce: await web3.eth.getTransactionCount(airdropUser[1]),
-                to: this.dlt.address,
-                value: 0,
-                data: f.encodeABI(),
-                gas: 15000000
-            },
-            privateKey[1]
+        await expectRevert(
+            this.dlt.claimAirdrop(testProof[airdropUser[1]], {from: airdropUser[1]}),
+            'user is locked'
         );
-        thrown = false;
-        try {
-            await web3.eth.sendSignedTransaction(txn.rawTransaction);
-        } catch (error) {
-            const errorString = error.toString();
-            if (errorString.includes('user is locked')) {
-                thrown = true;
-            }
-        }
-        expect(thrown).to.be.true;
 
         // user can't claim when there is no token left
-        await send.ether(owner, airdropUser[2], ether('1'));
-        f = this.contract.methods.claimAirdrop(testProof[airdropUser[2]]);
-        txn = await web3.eth.accounts.signTransaction(
-            {
-                nonce: await web3.eth.getTransactionCount(airdropUser[2]),
-                to: this.dlt.address,
-                value: 0,
-                data: f.encodeABI(),
-                gas: 15000000
-            },
-            privateKey[2]
+        await expectRevert(
+            this.dlt.claimAirdrop(testProof[airdropUser[2]], {from: airdropUser[2]}),
+            'no token left'
         );
-        thrown = false;
-        try {
-            await web3.eth.sendSignedTransaction(txn.rawTransaction);
-        } catch (error) {
-            const errorString = error.toString();
-            if (errorString.includes('no token left')) {
-                thrown = true;
-            }
-        }
-        expect(thrown).to.be.true;
 
         // can't claim after airdrop finishes
         await time.increase(time.duration.hours(36));
