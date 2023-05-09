@@ -275,6 +275,7 @@ describe('DeflationLabsTokenTest', () => {
         expect(userBalance.eq(totalAirdrop.mul(new BN(9)).div(new BN(10)))).to.be.true;
         res = await this.dlt.airdropEligible(airdropUser[0], testProof[airdropUser[0]]);
         expect(res['0']).to.be.false;
+        expect((await this.dlt.claimedUsers()).toNumber()).to.equal(1);
 
         // can't claim twice
         await expectRevert(

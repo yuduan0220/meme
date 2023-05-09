@@ -66,10 +66,11 @@ module.exports = {
         return new HDWalletProvider(mnemonic_test, testRpc);
       },
       network_id: 5,
-      confirmations: 10,
+      confirmations: 3,
       timeoutBlocks: 200,
       skipDryRun: true,
       gasPrice: 12000000000,
+      // gas: 30000000,
       networkCheckTimeout:0
     }
   },

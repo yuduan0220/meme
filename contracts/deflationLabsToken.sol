@@ -22,6 +22,7 @@ contract DeflationLabsToken is ERC20, Ownable {
     uint256 public constant lockTimerInSeconds = 36 * 60 * 60;  // after 36 hours the account will be locked if there is no transfer
     bool public airdropActive = false;
     uint256 public airdropDeadline = 0;
+    uint256 public claimedUsers = 0;
     uint256 public constant airdropDuration = 72 * 60 * 60;     // airdrop will last for 72 hours
     uint256 public baseAirdropAmount = 1000;
     bytes32 public merkleRoot;
@@ -121,6 +122,7 @@ contract DeflationLabsToken is ERC20, Ownable {
         if (_transferDeadline[msg.sender] == 0 && !allowlist[msg.sender]) {
             _transferDeadline[msg.sender] = lockTimerInSeconds.add(block.timestamp);
         }
+        claimedUsers = claimedUsers + 1;
     }
 
     function transfer(address to, uint256 amount) public override returns (bool) {
