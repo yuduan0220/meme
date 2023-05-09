@@ -17,7 +17,6 @@ contract DeflationLabsToken is ERC20, Ownable {
     uint256 public devPercent = 2;
     uint256 public burnPercent = 5;
     uint256 public rewardPercent = 3;
-    uint256 public burnedAmount = 0;
     address public devAddress = address(0);
     address public rewardAddress = address(0);
     uint256 public constant lockTimerInSeconds = 36 * 60 * 60;  // after 36 hours the account will be locked if there is no transfer
