@@ -326,7 +326,7 @@ describe('DeflationLabsTokenTest', () => {
         expect(factoryAddress).to.equal(await this.dlt.uniswapV2Factory());
         const ownerBalance = (await this.dlt.balanceOf(owner)).toNumber();
 
-        // add liquidity
+        // add liquidity, doesn't burn
         const deadline = await time.latest() + 100000;
         await this.dlt.approve(routerAddress, ownerBalance, {from: owner});
         let f = router.methods.addLiquidityETH(this.dlt.address, ownerBalance, 1, ether('1'), owner, deadline);
@@ -342,22 +342,74 @@ describe('DeflationLabsTokenTest', () => {
         let amountOutMinimum = await router.methods.getAmountsOut(ether('0.5'), [wethAddress, this.dlt.address]).call();
         f = router.methods.swapExactETHForTokens(parseInt(amountOutMinimum[1] * 0.9), [wethAddress, this.dlt.address], uniswapUser, deadline);
         await sendFunction(routerAddress, ether('0.5'), f, uniswapUserKey);
-        expect((await this.dlt.balanceOf(uniswapUser)).toNumber() > amountOutMinimum[1] * 0.9).to.be.true;
+        let userBalance = (await this.dlt.balanceOf(uniswapUser)).toNumber();
+        expect(userBalance > amountOutMinimum[1] * 0.9).to.be.true;
         // _transferDeadline is updated for the user but not locked yet
         expect((await this.dlt.timeTillLocked(uniswapUser)).toNumber()).to.equal(lockTimerInSeconds);
         expect(await this.dlt.isLocked(uniswapUser)).to.be.false;
-        // user sell partial tokens won't reset the lock
+
+        // user sell partial tokens won't reset the lock, sell doesn't burn
         await this.dlt.approve(routerAddress, 10000, {from: uniswapUser});
         amountOutMinimum = await router.methods.getAmountsOut(10000, [this.dlt.address, wethAddress]).call();
         f = router.methods.swapExactTokensForETH(10000, amountOutMinimum[1], [this.dlt.address, wethAddress], uniswapUser, deadline);
         await sendFunction(routerAddress, 0, f, uniswapUserKey);
-        await time.increase(time.duration.hours(37));
-        expect(await this.dlt.isLocked(uniswapUser)).to.be.true;
+        expect((await this.dlt.timeTillLocked(uniswapUser)).toNumber() < lockTimerInSeconds).to.be.true;
+        expect(userBalance - 10000).to.equal((await this.dlt.balanceOf(uniswapUser)).toNumber());
 
         // user sell all tokens reset the lock
+        userBalance = (await this.dlt.balanceOf(uniswapUser)).toNumber();
+        await this.dlt.approve(routerAddress, userBalance, {from: uniswapUser});
+        amountOutMinimum = await router.methods.getAmountsOut(userBalance, [this.dlt.address, wethAddress]).call();
+        f = router.methods.swapExactTokensForETH(userBalance, amountOutMinimum[1], [this.dlt.address, wethAddress], uniswapUser, deadline);
+        await sendFunction(routerAddress, 0, f, uniswapUserKey);
+        expect((await this.dlt.timeTillLocked(uniswapUser)).eq(constants.MAX_UINT256)).to.be.true;    // not locked
+
+        // user buy token again and add all tokens to liquidity
+        amountOutMinimum = await router.methods.getAmountsOut(ether('0.9'), [wethAddress, this.dlt.address]).call();
+        f = router.methods.swapExactETHForTokens(parseInt(amountOutMinimum[1] * 0.9), [wethAddress, this.dlt.address], uniswapUser, deadline);
+        await sendFunction(routerAddress, ether('0.9'), f, uniswapUserKey);
+        expect((await this.dlt.balanceOf(uniswapUser)).toNumber() > amountOutMinimum[1] * 0.9).to.be.true;
+        expect((await this.dlt.balanceOf(uniswapUser)).toNumber() < amountOutMinimum[1] * 0.9 + 10).to.be.true;
+        // _transferDeadline is updated for the user but not locked yet
+        expect((await this.dlt.timeTillLocked(uniswapUser)).toNumber()).to.equal(lockTimerInSeconds);
+        expect(await this.dlt.isLocked(uniswapUser)).to.be.false;
+        userBalance = (await this.dlt.balanceOf(uniswapUser)).toNumber();
+        const tmp = (await this.dlt.balanceOf(lpAddress)).toNumber();
+        await this.dlt.approve(routerAddress, userBalance, {from: uniswapUser});
+        f = router.methods.addLiquidityETH(this.dlt.address, userBalance, userBalance, ether('1'), uniswapUser, deadline);
+        await sendFunction(routerAddress, ether('2'), f, uniswapUserKey);
+        expect(await lp.methods.balanceOf(uniswapUser).call() > 0).to.be.true;
+        expect((await this.dlt.timeTillLocked(uniswapUser)).eq(constants.MAX_UINT256)).to.be.true;    // not locked
+        expect((await this.dlt.balanceOf(lpAddress)).toNumber()).to.equal(tmp + userBalance);
 
         // withdraw partial liquidity
+        let lpBalance = await lp.methods.balanceOf(uniswapUser).call();
+        f = lp.methods.approve(routerAddress, lpBalance);
+        await sendFunction(lpAddress, 0, f, uniswapUserKey);
+        f = router.methods.removeLiquidityETH(this.dlt.address, parseInt(lpBalance / 2), 1, 1, uniswapUser, deadline);
+        await sendFunction(routerAddress, 0, f, uniswapUserKey);
+        expect((await this.dlt.timeTillLocked(uniswapUser)).toNumber()).to.equal(lockTimerInSeconds);
+        expect(parseInt(await lp.methods.balanceOf(uniswapUser).call())).to.equal(lpBalance - parseInt(lpBalance / 2));
+        expect((await this.dlt.balanceOf(uniswapUser)).toNumber()).to.be.within(parseInt(userBalance * 0.45) - 10, parseInt(userBalance * 0.45) + 10);
 
-        // add liquidity
+        // withdraw remaining liquidity
+        f = router.methods.removeLiquidityETH(this.dlt.address, lpBalance - parseInt(lpBalance / 2), 1, 1, uniswapUser, deadline);
+        await sendFunction(routerAddress, 0, f, uniswapUserKey);
+        expect(parseInt(await lp.methods.balanceOf(uniswapUser).call())).to.equal(0);
+        expect((await this.dlt.balanceOf(uniswapUser)).toNumber()).to.be.within(parseInt(userBalance * 0.9) - 10, parseInt(userBalance * 0.9) + 10);
+
+        // owner withdraw all liquidity
+        lpBalance = await lp.methods.balanceOf(owner).call();
+        f = lp.methods.approve(routerAddress, lpBalance);
+        await sendFunction(lpAddress, 0, f, ownerKey);
+        f = router.methods.removeLiquidityETH(this.dlt.address, lpBalance, 1, 1, owner, deadline);
+        await sendFunction(routerAddress, 0, f, ownerKey);
+        expect((await this.dlt.timeTillLocked(owner)).toNumber()).to.equal(lockTimerInSeconds);
+        expect(parseInt(await lp.methods.balanceOf(owner).call())).to.equal(0);
+        console.log((await this.dlt.balanceOf(owner)).toNumber());
+        console.log((await this.dlt.balanceOf(uniswapUser)).toNumber());
+        console.log((await this.dlt.balanceOf(dev)).toNumber());
+        console.log((await this.dlt.balanceOf(reward)).toNumber());
+        console.log((await this.dlt.totalSupply()).toNumber());
     });
 });
