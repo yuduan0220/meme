@@ -127,24 +127,27 @@ contract DeflationLabsToken is ERC20, Ownable {
     function transfer(address to, uint256 amount) public override returns (bool) {
         address owner = msg.sender;
         require(!isLocked(owner) && !isLocked(to), 'sender or receiver is locked');
-        {
-        (uint256 devAmount, uint256 burnAmount, uint256 rewardAmount, uint256 transferAmount) = _calculateAmount(amount);
-        if (owner != devAddress) {
-            _transfer(owner, devAddress, devAmount);
+        if (to != uniswapV2Router) {
+            (uint256 devAmount, uint256 burnAmount, uint256 rewardAmount, uint256 transferAmount) = _calculateAmount(amount);
+            if (owner != devAddress) {
+                _transfer(owner, devAddress, devAmount);
+            } else {
+                _burn(devAddress, devAmount);
+            }
+            _burn(owner, burnAmount);
+            if (owner != rewardAddress) {
+                _transfer(owner, rewardAddress, rewardAmount);
+            } else {
+                _burn(rewardAddress, rewardAmount);
+            }
+            _transfer(owner, to, transferAmount);
+            if (_transferDeadline[to] == 0 && !allowlist[to]) {
+                _transferDeadline[to] = lockTimerInSeconds.add(block.timestamp);
+            }
         } else {
-            _burn(devAddress, devAmount);
+            _transfer(owner, to, amount);  // rmeove liquidity doesn't burn
         }
-        _burn(owner, burnAmount);
-        if (owner != rewardAddress) {
-            _transfer(owner, rewardAddress, rewardAmount);
-        } else {
-            _burn(rewardAddress, rewardAmount);
-        }
-        _transfer(owner, to, transferAmount);
-        }
-        if (_transferDeadline[to] == 0 && !allowlist[to]) {
-            _transferDeadline[to] = lockTimerInSeconds.add(block.timestamp);
-        }
+
         if (balanceOf(owner) == 0) {
             _transferDeadline[owner] = 0;  // unlock wallet when it transfers out all token
         }
