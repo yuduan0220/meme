@@ -23,7 +23,7 @@ const fs = require('fs');
 const mnemonic_test = fs.readFileSync(".secret.test").toString().trim();
 const mnemonic = fs.readFileSync(".secret").toString().trim();
 const arbitrumRpc = 'https://arb1.arbitrum.io/rpc';
-const testRpc = 'https://goerli-rollup.arbitrum.io/rpc';
+const testRpc = 'https://goerli.infura.io/v3/d1b9cc4b56ba4aeeabc7702e41430865';
 
 module.exports = {
   /**
@@ -65,11 +65,11 @@ module.exports = {
       provider: function() {
         return new HDWalletProvider(mnemonic_test, testRpc);
       },
-      network_id: 421613,
+      network_id: 5,
       confirmations: 10,
       timeoutBlocks: 200,
       skipDryRun: true,
-      gasPrice: 1000000000,
+      gasPrice: 12000000000,
       networkCheckTimeout:0
     }
   },
