@@ -1,5 +1,6 @@
 const DeflationLabsToken = artifacts.require("DeflationLabsToken");
 
-module.exports = function (deployer) {
+module.exports = async function (deployer) {
     deployer.deploy(DeflationLabsToken);
+    const dlt = await DeflationLabsToken.deployed();
 };
