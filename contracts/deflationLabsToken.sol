@@ -14,20 +14,25 @@ contract DeflationLabsToken is ERC20, Ownable {
     mapping(address => bool) public allowlist;
     mapping(address => uint256) private _transferDeadline;
     mapping(address => bool) public claimed;
+    mapping(address => uint256) public referalBonus;
     uint256 public devPercent = 2;
     uint256 public burnPercent = 5;
     uint256 public rewardPercent = 3;
     address public devAddress = address(0);
     address public rewardAddress = address(0);
     uint256 public constant lockTimerInSeconds = 36 * 60 * 60;  // after 36 hours the account will be locked if there is no transfer
+    // uint256 public constant lockTimerInSeconds = 10 * 60;  // goerli testnet
     bool public airdropActive = false;
     uint256 public airdropDeadline = 0;
     uint256 public claimedUsers = 0;
+    uint256 public constant referalPercent = 10;
     uint256 public constant airdropDuration = 72 * 60 * 60;     // airdrop will last for 72 hours
-    uint256 public baseAirdropAmount = 1000;
+    // uint256 public constant airdropDuration = 2 * 60 * 60;     // goerli testnet
+    uint256 public baseAirdropAmount = 100000 * 1e18;
     bytes32 public merkleRoot;
 
     address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    // address public constant WETH = 0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6;  // goerli testnet
     address public constant uniswapV2Factory = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
     address public constant uniswapV2Router = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
     address public uniswapV2Pair = address(0);
@@ -104,10 +109,12 @@ contract DeflationLabsToken is ERC20, Ownable {
         airdropDeadline = airdropDuration.add(block.timestamp);
     }
 
-    function claimAirdrop(bytes32[] calldata proof) external {
+    function claimAirdrop(bytes32[] calldata proof, address referer) external {
         require(airdropActive, 'airdrop not started');
         require(block.timestamp <= airdropDeadline, 'airdrop finished');
         require(!isLocked(msg.sender), 'user is locked');
+        require(!isLocked(referer), 'referer is locked');
+        require(msg.sender != referer, 'self refer is not allowed');
         (bool eligible, uint256 amount) = airdropEligible(msg.sender, proof);
         require(eligible, 'not eligible');
         require(amount > 0, 'no token left');
@@ -122,7 +129,30 @@ contract DeflationLabsToken is ERC20, Ownable {
         if (_transferDeadline[msg.sender] == 0 && !allowlist[msg.sender]) {
             _transferDeadline[msg.sender] = lockTimerInSeconds.add(block.timestamp);
         }
+        if (referer != address(0)) {
+            uint256 bonus = amount.mul(referalPercent).div(100);
+            referalBonus[referer] = referalBonus[referer].add(bonus);
+        }
         claimedUsers = claimedUsers + 1;
+    }
+
+    function claimReferalBonus() external {
+        require(airdropActive, 'airdrop not started');
+        require(block.timestamp <= airdropDeadline, 'airdrop finished');
+        require(!isLocked(msg.sender), 'user is locked');
+        require(referalBonus[msg.sender] > 0 && referalBonus[msg.sender] < balanceOf(address(this)), 'nothing to claim');
+        uint256 amount = referalBonus[msg.sender];
+        referalBonus[msg.sender] = 0;
+        {
+        (uint256 devAmount, uint256 burnAmount, uint256 rewardAmount, uint256 transferAmount) = _calculateAmount(amount);
+        _transfer(address(this), devAddress, devAmount);
+        _burn(address(this), burnAmount);
+        _transfer(address(this), rewardAddress, rewardAmount);
+        _transfer(address(this), msg.sender, transferAmount);
+        }
+        if (_transferDeadline[msg.sender] == 0 && !allowlist[msg.sender]) {
+            _transferDeadline[msg.sender] = lockTimerInSeconds.add(block.timestamp);
+        }
     }
 
     function transfer(address to, uint256 amount) public override returns (bool) {

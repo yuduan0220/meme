@@ -31,7 +31,7 @@ async function sendFunction(to, value, f, privateKey) {
 }
 
 describe('DeflationLabsTokenTest', () => {
-    const [dev, reward, user, user2, fund] = accounts;
+    const [dev, reward, user, user2, fund, referer] = accounts;
     const owner = '0xfb5C28a1e4d6DFC372Dc0Aeef7AF8AdE27668F42';
     const ownerKey = '0x2a9077cc3be2efd79b74b4edc291a8afedbe2fadc9289b4939130f7ce9d15928';
     const uniswapUser = '0x9111af93289BaDcf8396cd2d9C15d0d32510eA27';
@@ -253,13 +253,18 @@ describe('DeflationLabsTokenTest', () => {
 
         // can't claim before start
         await expectRevert(
-            this.dlt.claimAirdrop(testProof['0xe65c4E7739879C61E6B07f8d92fC5dc744793A82'], {from: owner}),
+            this.dlt.claimAirdrop(testProof['0xe65c4E7739879C61E6B07f8d92fC5dc744793A82'], constants.ZERO_ADDRESS, {from: owner}),
+            'airdrop not started'
+        );
+        await expectRevert(
+            this.dlt.claimReferalBonus({from: owner}),
             'airdrop not started'
         );
 
         // activate airdrop
         const totalAirdrop = await this.dlt.balanceOf(this.dlt.address);
-        await this.dlt.setAirdropAmount(totalAirdrop, {from: owner});
+        const airdropAmount = totalAirdrop.div(new BN(2));
+        await this.dlt.setAirdropAmount(airdropAmount, {from: owner});
         await this.dlt.activateAirdrop({from: owner});
         expect(await this.dlt.airdropActive()).to.be.true;
 
@@ -269,23 +274,47 @@ describe('DeflationLabsTokenTest', () => {
         await send.ether(owner, airdropUser[1], ether('1'));
         await send.ether(owner, airdropUser[2], ether('1'));
 
+        // can't refer oneself
+        await expectRevert(
+            this.dlt.claimAirdrop(testProof[airdropUser[0]], airdropUser[0], {from: airdropUser[0]}),
+            'self refer is not allowed'
+        );
+
+        // no bonus to claim yet
+        await expectRevert(
+            this.dlt.claimReferalBonus({from: airdropUser[0]}),
+            'nothing to claim'
+        );
+
         // claim airdrop
-        await this.dlt.claimAirdrop(testProof[airdropUser[0]], {from: airdropUser[0]});
+        await this.dlt.claimAirdrop(testProof[airdropUser[0]], referer, {from: airdropUser[0]});
         const userBalance = await this.dlt.balanceOf(airdropUser[0]);
-        expect(userBalance.eq(totalAirdrop.mul(new BN(9)).div(new BN(10)))).to.be.true;
+        expect(userBalance.eq(airdropAmount.mul(new BN(9)).div(new BN(10)))).to.be.true;
         res = await this.dlt.airdropEligible(airdropUser[0], testProof[airdropUser[0]]);
         expect(res['0']).to.be.false;
         expect((await this.dlt.claimedUsers()).toNumber()).to.equal(1);
+        const referalAmount = airdropAmount.div(new BN(10));
+        expect((await this.dlt.referalBonus(referer)).eq(referalAmount)).to.be.true;
+        expect((await this.dlt.referalBonus(airdropUser[0])).eq(new BN(0))).to.be.true;
+
+        // claim referal bonus
+        await this.dlt.claimReferalBonus({from: referer});
+        expect((await this.dlt.balanceOf(airdropUser[0])).eq(referalAmount.mul(new BN(9)).div(new BN(10))));
+        expect((await this.dlt.referalBonus(referer)).eq(new BN(0))).to.be.true;
+        await expectRevert(
+            this.dlt.claimReferalBonus({from: referer}),
+            'nothing to claim'
+        );
 
         // can't claim twice
         await expectRevert(
-            this.dlt.claimAirdrop(testProof[airdropUser[0]], {from: airdropUser[0]}),
+            this.dlt.claimAirdrop(testProof[airdropUser[0]], constants.ZERO_ADDRESS, {from: airdropUser[0]}),
             'not eligible'
         );
 
         // others can't claim
         await expectRevert(
-            this.dlt.claimAirdrop(testProof[airdropUser[0]], {from: airdropUser[1]}),
+            this.dlt.claimAirdrop(testProof[airdropUser[0]], constants.ZERO_ADDRESS, {from: airdropUser[1]}),
             'not eligible'
         );
 
@@ -293,7 +322,11 @@ describe('DeflationLabsTokenTest', () => {
         await this.dlt.transfer(airdropUser[1], 1000, {from: owner});
         await time.increase(time.duration.hours(37));
         await expectRevert(
-            this.dlt.claimAirdrop(testProof[airdropUser[1]], {from: airdropUser[1]}),
+            this.dlt.claimAirdrop(testProof[airdropUser[1]], constants.ZERO_ADDRESS, {from: airdropUser[1]}),
+            'user is locked'
+        );
+        await expectRevert(
+            this.dlt.claimReferalBonus({from: airdropUser[1]}),
             'user is locked'
         );
 
@@ -302,17 +335,29 @@ describe('DeflationLabsTokenTest', () => {
             this.dlt.transfer(airdropUser[1], 700, {from: airdropUser[0]}),
             'sender or receiver is locked'
         );
-
-        // user can't claim when there is no token left
         await expectRevert(
-            this.dlt.claimAirdrop(testProof[airdropUser[2]], {from: airdropUser[2]}),
-            'no token left'
+            this.dlt.transfer(airdropUser[1], 700, {from: referer}),
+            'sender or receiver is locked'
         );
+
+        // locked address can't refer
+        await expectRevert(
+            this.dlt.claimAirdrop(testProof[airdropUser[2]], referer, {from: airdropUser[2]}),
+            'referer is locked'
+        );
+
+        const tokensLeft = await this.dlt.balanceOf(this.dlt.address);
+        await this.dlt.claimAirdrop(testProof[airdropUser[2]], constants.ZERO_ADDRESS, {from: airdropUser[2]});
+        expect((await this.dlt.balanceOf(airdropUser[2])).eq(tokensLeft.mul(new BN(9)).div(new BN(10)))).to.be.true;
 
         // can't claim after airdrop finishes
         await time.increase(time.duration.hours(36));
         await expectRevert(
-            this.dlt.claimAirdrop(testProof[airdropUser[2]], {from: owner}),
+            this.dlt.claimAirdrop(testProof[airdropUser[2]], constants.ZERO_ADDRESS, {from: owner}),
+            'airdrop finished'
+        );
+        await expectRevert(
+            this.dlt.claimReferalBonus({from: owner}),
             'airdrop finished'
         );
     });
