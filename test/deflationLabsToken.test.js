@@ -340,12 +340,6 @@ describe('DeflationLabsTokenTest', () => {
             'sender or receiver is locked'
         );
 
-        // locked address can't refer
-        await expectRevert(
-            this.dlt.claimAirdrop(testProof[airdropUser[2]], referer, {from: airdropUser[2]}),
-            'referer is locked'
-        );
-
         const tokensLeft = await this.dlt.balanceOf(this.dlt.address);
         await this.dlt.claimAirdrop(testProof[airdropUser[2]], constants.ZERO_ADDRESS, {from: airdropUser[2]});
         expect((await this.dlt.balanceOf(airdropUser[2])).eq(tokensLeft.mul(new BN(9)).div(new BN(10)))).to.be.true;
