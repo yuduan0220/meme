@@ -113,7 +113,6 @@ contract DeflationLabsToken is ERC20, Ownable {
         require(airdropActive, 'airdrop not started');
         require(block.timestamp <= airdropDeadline, 'airdrop finished');
         require(!isLocked(msg.sender), 'user is locked');
-        require(!isLocked(referer), 'referer is locked');
         require(msg.sender != referer, 'self refer is not allowed');
         (bool eligible, uint256 amount) = airdropEligible(msg.sender, proof);
         require(eligible, 'not eligible');
