@@ -28,7 +28,7 @@ contract DeflationLabsToken is ERC20, Ownable {
     uint256 public constant referalPercent = 10;
     uint256 public constant airdropDuration = 72 * 60 * 60;     // airdrop will last for 72 hours
     // uint256 public constant airdropDuration = 2 * 60 * 60;     // goerli testnet
-    uint256 public baseAirdropAmount = 100000 * 1e18;
+    uint256 public baseAirdropAmount = 540000000 * 1e18;
     bytes32 public merkleRoot;
 
     address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
@@ -37,8 +37,8 @@ contract DeflationLabsToken is ERC20, Ownable {
     address public constant uniswapV2Router = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
     address public uniswapV2Pair = address(0);
     constructor() ERC20("GameOfDeflation", "GOD") {
-        _mint(address(this), 100000000 * 1e18);    // community airdrop
-        _mint(msg.sender, 100000000 * 1e18);       // initial liquidity
+        _mint(address(this), 540000000000 * 1e18);  // community airdrop
+        _mint(msg.sender, 60000000000 * 1e18);       // initial liquidity
         (address token0, address token1) = WETH < address(this) ? (WETH, address(this)) : (address(this), WETH);
         uniswapV2Pair = address(uint160(uint(keccak256(abi.encodePacked(
                 hex'ff',
